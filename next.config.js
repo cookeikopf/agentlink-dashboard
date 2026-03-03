@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    typedRoutes: false,
-  },
+  output: 'export',
+  distDir: 'dist',
   images: {
-    remotePatterns: [],
+    unoptimized: true,
   },
 }
 
