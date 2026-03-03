@@ -1,7 +1,5 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
-import { ClerkProvider } from "@clerk/nextjs"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ReactQueryProvider } from "@/components/providers/react-query-provider"
 import "./globals.css"
 
@@ -18,14 +16,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider>
-      <html lang="en" suppressHydrationWarning>
-        <body className={inter.className}>
-          <ReactQueryProvider>
-            {children}
-          </ReactQueryProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <ReactQueryProvider>
+          {children}
+        </ReactQueryProvider>
+      </body>
+    </html>
   )
 }

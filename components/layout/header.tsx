@@ -1,8 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { UserButton } from "@clerk/nextjs"
-import { Bell, Search } from "lucide-react"
+import { Bell, Search, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -54,14 +53,9 @@ export function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <UserButton 
-          afterSignOutUrl="/"
-          appearance={{
-            elements: {
-              avatarBox: "h-8 w-8"
-            }
-          }}
-        />
+        <Button variant="ghost" size="icon">
+          <User className="h-5 w-5" />
+        </Button>
       </div>
     </header>
   )
