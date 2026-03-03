@@ -1,10 +1,16 @@
-import { redirect } from "next/navigation"
-import { auth } from "@clerk/nextjs/server"
+"use client"
 
-export default async function HomePage() {
-  const session = await auth()
+import { useAuth } from "@clerk/nextjs"
+import { redirect } from "next/navigation"
+
+export default function HomePage() {
+  const { userId, isLoaded } = useAuth()
   
-  if (session.userId) {
+  if (!isLoaded) {
+    return <div>Loading...</div>
+  }
+  
+  if (userId) {
     redirect("/dashboard")
   }
   
