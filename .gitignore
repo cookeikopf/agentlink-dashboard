@@ -17,10 +17,8 @@ dist
 # Misc
 .DS_Store
 *.pem
-.env
 .env.development.local
 .env.test.local
-.env.production.local
 
 # Debug
 npm-debug.log*
@@ -37,31 +35,9 @@ playwright-report/
 e2e/screenshots/
 e2e/videos/
 
-# OpenClaw
+# Embedded git repos
 .openclaw/
 .clawhub/
 
-# Alte Projekte - nicht Teil des Dashboards
-agentlink/
-agentpump-frontend/
-autonomclaw-contracts/
-clawcredit-*/
-test-foundry/
-skills/
-developer-review/
-contracts/
-
-# Alte Dateien
-AGENTS.md
-BOOTSTRAP.md
-EOF
-HEARTBEAT.md
-IDENTITY.md
-MEMORY.md
-PUSH_TO_GITHUB.sh
-SOUL.md
-TOOLS.md
-TWITTER_CONTENT.md
-USER.md
-VIRAL_STRATEGY.md
-x-api-use-case.txt
+# Optional: Don't ignore .env.production for this project
+# since we need it for Vercel build
