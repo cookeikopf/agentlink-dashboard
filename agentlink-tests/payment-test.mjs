@@ -1,16 +1,16 @@
-import { createPublicClient, createWalletClient, http, parseEther, formatEther } from 'viem'
+/**
+ * AgentLink Payment Test Script - KORRIGIERT für USDC (6 decimals)
+ * 
+ * Dieses Script testet Zahlungen zwischen Agenten über den PaymentRouter.
+ * Voraussetzung: USDC muss in den Wallets vorhanden sein.
+ */
+
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { createDecipheriv, scryptSync } from 'crypto'
-
-/**
- * AgentLink Payment Test Script
- * 
- * Dieses Script testet Zahlungen zwischen Agenten über den PaymentRouter.
- * Voraussetzung: USDC muss in den Wallets vorhanden sein.
- */
 
 const SECRETS_DIR = '/root/.openclaw/secrets/wallets'
 const AUDIT_LOG = join(SECRETS_DIR, 'audit.log')
@@ -18,6 +18,15 @@ const AUDIT_LOG = join(SECRETS_DIR, 'audit.log')
 // Contract Adressen
 const PAYMENT_ROUTER = '0x116f7A6A3499fE8B1Ffe41524CCA6573C18d18fF'
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
+
+// Hilfsfunktionen für USDC (6 decimals)
+function formatUSDC(amount) {
+  return formatUnits(amount, 6)
+}
+
+function parseUSDC(amount) {
+  return parseUnits(amount, 6)
+}
 
 // ABIs
 const PaymentRouterABI = [
@@ -50,13 +59,6 @@ const PaymentRouterABI = [
 
 const USDC_ABI = [
   {
-    "inputs": [{ "name": "spender", "type": "address" }, { "name": "amount", "type": "uint256" }],
-    "name": "approve",
-    "outputs": [{ "name": "", "type": "bool" }],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [{ "name": "account", "type": "address" }],
     "name": "balanceOf",
     "outputs": [{ "name": "", "type": "uint256" }],
@@ -64,9 +66,23 @@ const USDC_ABI = [
     "type": "function"
   },
   {
+    "inputs": [{ "name": "spender", "type": "address" }, { "name": "amount", "type": "uint256" }],
+    "name": "approve",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [{ "name": "owner", "type": "address" }, { "name": "spender", "type": "address" }],
     "name": "allowance",
     "outputs": [{ "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{ "name": "", "type": "uint8" }],
     "stateMutability": "view",
     "type": "function"
   }
@@ -125,13 +141,13 @@ async function runPaymentTests() {
     publicClient.readContract({ address: USDC, abi: USDC_ABI, functionName: 'balanceOf', args: [agent3.address] })
   ])
   
-  console.log(`║     Agent #1: ${formatEther(balances[0])} USDC`)
-  console.log(`║     Agent #2: ${formatEther(balances[1])} USDC`)
-  console.log(`║     Agent #3: ${formatEther(balances[2])} USDC`)
+  console.log(`║     Agent #1: ${formatUSDC(balances[0])} USDC`)
+  console.log(`║     Agent #2: ${formatUSDC(balances[1])} USDC`)
+  console.log(`║     Agent #3: ${formatUSDC(balances[2])} USDC`)
   console.log('║                                                                  ║')
   
   // Prüfen ob genug USDC vorhanden
-  const minRequired = parseEther('1')  // 1 USDC minimum
+  const minRequired = parseUSDC('1')  // 1 USDC minimum
   if (balances[0] < minRequired) {
     console.log('║  ❌ NICHT GENUG USDC!')
     console.log('║                                                                  ║')
@@ -145,17 +161,8 @@ async function runPaymentTests() {
   console.log('║  ✅ Genug USDC! Starte Tests...')
   console.log('║                                                                  ║')
   
-  // PaymentRouter Stats vorher
-  const statsBefore = await publicClient.readContract({
-    address: PAYMENT_ROUTER,
-    abi: PaymentRouterABI,
-    functionName: 'getStats'
-  })
-  console.log(`║  📊 Stats vorher: ${statsBefore[2]} Zahlungen, ${formatEther(statsBefore[0])} USDC Volumen`)
-  console.log('║                                                                  ║')
-  
-  // Test 1: Agent #1 zahlt an Agent #2
-  console.log('║  🧪 TEST 1: Agent #1 → Agent #2 (0.5 USDC)')
+  // APPROVAL für PaymentRouter
+  console.log('║  🔓 Prüfe/Setze USDC Approval für PaymentRouter...')
   
   const wallet1 = createWalletClient({
     account: agent1,
@@ -163,18 +170,57 @@ async function runPaymentTests() {
     transport: http('https://sepolia.base.org')
   })
   
-  // Fee berechnen
-  const amount1 = parseEther('0.5')
+  const currentAllowance = await publicClient.readContract({
+    address: USDC,
+    abi: USDC_ABI,
+    functionName: 'allowance',
+    args: [agent1.address, PAYMENT_ROUTER]
+  })
+  
+  console.log(`║     Aktuelles Allowance: ${formatUSDC(currentAllowance)} USDC`)
+  
+  if (currentAllowance < parseUSDC('2')) {
+    console.log('║     Setze Approval auf 10 USDC...')
+    try {
+      const approveHash = await wallet1.writeContract({
+        address: USDC,
+        abi: USDC_ABI,
+        functionName: 'approve',
+        args: [PAYMENT_ROUTER, parseUSDC('10')]
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      console.log('║     ✅ Approval gesetzt!')
+    } catch (e) {
+      console.log(`║     ❌ Approval fehlgeschlagen: ${e.message.slice(0, 40)}`)
+    }
+  } else {
+    console.log('║     ✅ Approval bereits ausreichend')
+  }
+  
+  console.log('║                                                                  ║')
+  
+  // PaymentRouter Stats vorher
+  const statsBefore = await publicClient.readContract({
+    address: PAYMENT_ROUTER,
+    abi: PaymentRouterABI,
+    functionName: 'getStats'
+  })
+  console.log(`║  📊 Stats vorher: ${statsBefore[2]} Zahlungen, ${formatUSDC(statsBefore[0])} USDC Volumen`)
+  console.log('║                                                                  ║')
+  
+  // Test 1: Agent #1 zahlt an Agent #2
+  console.log('║  🧪 TEST 1: Agent #1 → Agent #2 (0.5 USDC)')
+  
+  const amount1 = parseUSDC('0.5')
   const fee1 = await publicClient.readContract({
     address: PAYMENT_ROUTER,
     abi: PaymentRouterABI,
     functionName: 'calculateFee',
     args: [amount1]
   })
-  console.log(`║     Betrag: ${formatEther(amount1)} USDC`)
-  console.log(`║     Fee: ${formatEther(fee1)} USDC`)
+  console.log(`║     Betrag: ${formatUSDC(amount1)} USDC`)
+  console.log(`║     Fee: ${formatUSDC(fee1)} USDC`)
   
-  // Zahlung ausführen
   try {
     const hash1 = await wallet1.writeContract({
       address: PAYMENT_ROUTER,
@@ -188,7 +234,7 @@ async function runPaymentTests() {
     
     if (receipt1.status === 'success') {
       console.log('║     ✅ Zahlung erfolgreich!')
-      logAction('PAYMENT_SENT', `Agent #1 → #2 | ${formatEther(amount1)} USDC | Tx: ${hash1}`)
+      logAction('PAYMENT_SENT', `Agent #1 → #2 | ${formatUSDC(amount1)} USDC | Tx: ${hash1}`)
     } else {
       console.log('║     ❌ Zahlung fehlgeschlagen!')
     }
@@ -201,7 +247,7 @@ async function runPaymentTests() {
   // Test 2: Agent #1 zahlt an Agent #3
   console.log('║  🧪 TEST 2: Agent #1 → Agent #3 (0.3 USDC)')
   
-  const amount2 = parseEther('0.3')
+  const amount2 = parseUSDC('0.3')
   
   try {
     const hash2 = await wallet1.writeContract({
@@ -216,7 +262,7 @@ async function runPaymentTests() {
     
     if (receipt2.status === 'success') {
       console.log('║     ✅ Zahlung erfolgreich!')
-      logAction('PAYMENT_SENT', `Agent #1 → #3 | ${formatEther(amount2)} USDC | Tx: ${hash2}`)
+      logAction('PAYMENT_SENT', `Agent #1 → #3 | ${formatUSDC(amount2)} USDC | Tx: ${hash2}`)
     }
   } catch (e) {
     console.log(`║     ❌ Error: ${e.message.slice(0, 40)}`)
@@ -230,7 +276,7 @@ async function runPaymentTests() {
     abi: PaymentRouterABI,
     functionName: 'getStats'
   })
-  console.log(`║  📊 Stats nachher: ${statsAfter[2]} Zahlungen, ${formatEther(statsAfter[0])} USDC Volumen`)
+  console.log(`║  📊 Stats nachher: ${statsAfter[2]} Zahlungen, ${formatUSDC(statsAfter[0])} USDC Volumen`)
   
   // Neue Balances
   const newBalances = await Promise.all([
@@ -241,9 +287,9 @@ async function runPaymentTests() {
   
   console.log('║                                                                  ║')
   console.log('║  💰 Neue Balances:')
-  console.log(`║     Agent #1: ${formatEther(newBalances[0])} USDC`)
-  console.log(`║     Agent #2: ${formatEther(newBalances[1])} USDC`)
-  console.log(`║     Agent #3: ${formatEther(newBalances[2])} USDC`)
+  console.log(`║     Agent #1: ${formatUSDC(newBalances[0])} USDC`)
+  console.log(`║     Agent #2: ${formatUSDC(newBalances[1])} USDC`)
+  console.log(`║     Agent #3: ${formatUSDC(newBalances[2])} USDC`)
   
   console.log('║                                                                  ║')
   console.log('║  🎉 PAYMENT TESTS ABGESCHLOSSEN!                                 ║')
