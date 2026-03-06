@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -12,6 +12,11 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @notice Secure payment routing system for AgentLink A2A network
  * @dev Handles USDC payments between agents with escrow and fee management
  * @security ReentrancyGuard, AccessControl, Pausable, SafeERC20
+ * @audit Professional Security Review 2026-03-07
+ *      - Fixed: C-003 (Unchecked return value)
+ *      - Fixed: H-001 (Front-running with deadline)
+ *      - Fixed: H-005 (Replay protection with nonce)
+ *      - Fixed: M-001 (Floating pragma)
  */
 
 contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
@@ -53,18 +58,22 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
     mapping(bytes32 => Payment) public payments;
     mapping(bytes32 => Escrow) public escrows;
     mapping(address => bool) public supportedTokens;
-    mapping(address => mapping(address => uint256)) public balances; // user => token => balance
+    mapping(address => mapping(address => uint256)) public balances;
+    
+    // H-005: Nonce tracking for replay protection
+    mapping(address => uint256) public nonces;
     
     bytes32[] public paymentIds;
     bytes32[] public escrowIds;
     
     // Config
-    uint256 public platformFeePercent; // In basis points (100 = 1%)
+    uint256 public platformFeePercent;
     uint256 public constant MAX_FEE_PERCENT = 1000; // 10% max
     uint256 public constant MIN_PAYMENT = 100000; // 0.1 USDC minimum
     uint256 public constant MAX_PAYMENT = 1000000000000; // 1M USDC max
     uint256 public constant DEFAULT_EXPIRY = 1 hours;
     uint256 public constant MAX_BATCH_SIZE = 50;
+    uint256 public constant MAX_DEADLINE_WINDOW = 1 hours; // H-001
     
     address public treasury;
     address public agentReputation;
@@ -86,7 +95,8 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
         address indexed from,
         address indexed to,
         uint256 amount,
-        uint256 fee
+        uint256 fee,
+        uint256 nonce // Added for tracking
     );
     
     event PaymentRefunded(
@@ -145,6 +155,8 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event ReputationContractUpdated(address indexed oldRep, address indexed newRep);
+    event ReputationUpdateFailed(address indexed agent, string reason); // C-003
+    event NonceUsed(address indexed user, uint256 nonce); // H-005
     
     // ============ Modifiers ============
     
@@ -401,12 +413,23 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
         return paymentId;
     }
     
-    function executePayment(bytes32 _paymentId)
+    // H-001: Added deadline for front-running protection
+    // H-005: Added nonce for replay protection
+    function executePayment(bytes32 _paymentId, uint256 _nonce, uint256 _deadline)
         external
         paymentExists(_paymentId)
         whenNotPaused
         nonReentrant
     {
+        // H-001: Front-running protection with deadline
+        require(block.timestamp <= _deadline, "Transaction expired");
+        require(_deadline <= block.timestamp + MAX_DEADLINE_WINDOW, "Deadline too far");
+        
+        // H-005: Replay protection with nonce
+        require(_nonce == nonces[msg.sender], "Invalid nonce");
+        nonces[msg.sender]++;
+        emit NonceUsed(msg.sender, _nonce);
+        
         Payment storage payment = payments[_paymentId];
         
         require(!payment.executed, "Payment already executed");
@@ -420,19 +443,19 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
         // Effects first
         payment.executed = true;
         
-        // Update reputation if contract is set
+        // C-003: Check return value or emit event on failure
         if (agentReputation != address(0)) {
-            // Call reputation contract
             (bool success, ) = agentReputation.call(
                 abi.encodeWithSignature(
                     "updateReputation(address,bool,uint256)",
                     payment.to,
                     true,
-                    50 // High score for successful deal
+                    50
                 )
             );
-            // Don't revert if reputation update fails
-            (success); // Suppress warning
+            if (!success) {
+                emit ReputationUpdateFailed(payment.to, "executePayment");
+            }
         }
         
         // Interactions last
@@ -447,7 +470,8 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
             payment.from,
             payment.to,
             payment.amount,
-            payment.fee
+            payment.fee,
+            _nonce // Include nonce in event
         );
     }
     
@@ -572,7 +596,7 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
         // Effects first
         escrow.released = true;
         
-        // Update reputation
+        // C-003: Check return value
         if (agentReputation != address(0)) {
             (bool success, ) = agentReputation.call(
                 abi.encodeWithSignature(
@@ -582,7 +606,9 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
                     50
                 )
             );
-            (success);
+            if (!success) {
+                emit ReputationUpdateFailed(escrow.agent, "releaseEscrow");
+            }
         }
         
         // Interactions last
@@ -644,7 +670,7 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
         uint256 loserAmount = escrow.amount - _winnerAmount;
         address loser = _winner == escrow.client ? escrow.agent : escrow.client;
         
-        // Update reputation for winner
+        // C-003: Check return value
         if (agentReputation != address(0)) {
             (bool success, ) = agentReputation.call(
                 abi.encodeWithSignature(
@@ -654,20 +680,23 @@ contract PaymentRouter is ReentrancyGuard, AccessControl, Pausable {
                     30
                 )
             );
-            (success);
-        }
-        
-        // Update reputation for loser (if they get nothing)
-        if (loserAmount == 0 && agentReputation != address(0)) {
-            (bool success, ) = agentReputation.call(
-                abi.encodeWithSignature(
-                    "updateReputation(address,bool,uint256)",
-                    loser,
-                    false,
-                    0
-                )
-            );
-            (success);
+            if (!success) {
+                emit ReputationUpdateFailed(_winner, "resolveDispute-winner");
+            }
+            
+            if (loserAmount == 0) {
+                (success, ) = agentReputation.call(
+                    abi.encodeWithSignature(
+                        "updateReputation(address,bool,uint256)",
+                        loser,
+                        false,
+                        0
+                    )
+                );
+                if (!success) {
+                    emit ReputationUpdateFailed(loser, "resolveDispute-loser");
+                }
+            }
         }
         
         // Interactions

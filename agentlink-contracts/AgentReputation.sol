@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -386,20 +386,28 @@ contract AgentReputation is ReentrancyGuard, AccessControl, Pausable {
     
     /**
      * @notice Berechnet neuen Score
+     * @param _currentScore Aktueller Score
+     * @param _newScore Neuer Score
+     * @param _successful Ob erfolgreich
+     * @dev C-002: Integer overflow protection
      */
     function _calculateNewScore(
         uint256 _currentScore,
         uint256 _newScore,
         bool _successful
     ) internal pure returns (uint256) {
+        // C-002: Overflow protection - scores are bounded by MAX_SCORE (500)
+        require(_currentScore <= MAX_SCORE, "Current score overflow");
+        require(_newScore <= MAX_SCORE, "New score overflow");
+        
         uint256 result;
         
         if (_successful) {
             // Neue Reviews haben 20% Gewicht
-            result = _currentScore * 80 / 100 + _newScore * 20 / 100;
+            result = (_currentScore * 80) / 100 + (_newScore * 20) / 100;
         } else {
             // Bei Fehlern stärker abwerten
-            result = _currentScore * 70 / 100;
+            result = (_currentScore * 70) / 100;
         }
         
         // Begrenzen
