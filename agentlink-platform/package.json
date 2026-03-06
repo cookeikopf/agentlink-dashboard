@@ -7,10 +7,16 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
     "test": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "keywords": [
     "ai-agents",
@@ -25,27 +31,39 @@
   "author": "AgentLink",
   "license": "MIT",
   "dependencies": {
+    "@prisma/client": "^5.7.0",
     "viem": "^2.0.0",
-    "express": "^4.18.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "zod": "^3.22.4",
+    "winston": "^3.11.0",
+    "@sentry/node": "^7.91.0",
     "events": "^3.3.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/express": "^4.17.0",
-    "typescript": "^5.0.0",
-    "vitest": "^1.0.0",
-    "eslint": "^8.0.0",
-    "prettier": "^3.0.0"
+    "@types/node": "^20.10.5",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0",
+    "@vitest/coverage-v8": "^1.1.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1",
+    "tsx": "^4.7.0",
+    "prisma": "^5.7.0",
+    "supertest": "^6.3.3",
+    "@types/supertest": "^6.0.2"
   },
-  "peerDependencies": {
-    "viem": "^2.0.0"
+  "engines": {
+    "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/agentlink/platform"
-  },
-  "bugs": {
-    "url": "https://github.com/agentlink/platform/issues"
-  },
-  "homepage": "https://agentlink.io"
+  }
 }

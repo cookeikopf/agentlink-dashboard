@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AgentWallet {
+  id          String    @id @default(cuid())
+  did         String    @unique
+  owner       String
+  mainWallet  String
+  isPremium   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  
+  // Relations
+  sessionKeys SessionKey[]
+  listings    AgentListing[]
+  jobs        JobRequest[] @relation("ClientJobs")
+  workflows   Workflow[]
+  
+  @@index([owner])
+  @@index([did])
+}
+
+model SessionKey {
+  id          String    @id @default(cuid())
+  walletId    String
+  address     String
+  validUntil  DateTime
+  spendLimit  BigInt
+  spent       BigInt    @default(0)
+  createdAt   DateTime  @default(now())
+  
+  // JSON field for permissions
+  permissions Json
+  
+  // Relations
+  wallet      AgentWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  
+  @@index([walletId])
+  @@index([address])
+}
+
+model AgentListing {
+  id          String    @id @default(cuid())
+  walletId    String
+  name        String
+  description String
+  category    String
+  avatar      String?
+  
+  // Pricing
+  minPrice    BigInt
+  maxPrice    BigInt
+  currency    String    @default("USDC")
+  
+  // Status
+  availability String   @default("available")
+  isVerified   Boolean  @default(false)
+  isPremium    Boolean  @default(false)
+  
+  // Reputation (denormalized for performance)
+  reputationOverall Int @default(50)
+  
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  
+  // Relations
+  wallet      AgentWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  skills      Skill[]
+  portfolio   PortfolioItem[]
+  matches     Match[]
+  
+  @@index([category])
+  @@index([availability])
+  @@index([reputationOverall])
+}
+
+model Skill {
+  id          String    @id @default(cuid())
+  listingId   String
+  name        String
+  level       String    // beginner, intermediate, expert
+  verified    Boolean   @default(false)
+  endorsements Int      @default(0)
+  
+  listing     AgentListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  
+  @@index([listingId])
+  @@index([name])
+}
+
+model PortfolioItem {
+  id          String    @id @default(cuid())
+  listingId   String
+  title       String
+  description String
+  url         String?
+  completedAt DateTime
+  clientRating Int?
+  
+  listing     AgentListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  
+  @@index([listingId])
+}
+
+model JobRequest {
+  id          String    @id @default(cuid())
+  clientId    String
+  title       String
+  description String
+  category    String
+  
+  // Budget
+  budgetMin   BigInt
+  budgetMax   BigInt
+  currency    String    @default("USDC")
+  
+  // Status
+  status      String    @default("open") // open, in_progress, completed, cancelled
+  
+  // Deadline
+  deadline    DateTime
+  
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  client      AgentWallet @relation("ClientJobs", fields: [clientId], references: [id])
+  requiredSkills JobSkill[]
+  matches     Match[]
+  
+  @@index([status])
+  @@index([category])
+  @@index([clientId])
+}
+
+model JobSkill {
+  id          String    @id @default(cuid())
+  jobId       String
+  name        String
+  
+  job         JobRequest @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([name])
+}
+
+model Match {
+  id          String    @id @default(cuid())
+  jobId       String
+  listingId   String
+  score       Int
+  proposedPrice BigInt
+  status      String    @default("pending") // pending, accepted, rejected, expired
+  createdAt   DateTime  @default(now())
+  
+  // Relations
+  job         JobRequest @relation(fields: [jobId], references: [id])
+  listing     AgentListing @relation(fields: [listingId], references: [id])
+  escrow      Escrow?
+  
+  @@index([jobId])
+  @@index([listingId])
+  @@index([status])
+}
+
+model Escrow {
+  id          String    @id @default(cuid())
+  matchId     String    @unique
+  amount      BigInt
+  token       String
+  status      String    @default("funded") // funded, in_progress, completed, disputed, refunded
+  
+  // Milestones (JSON for flexibility)
+  milestones  Json
+  
+  createdAt   DateTime  @default(now())
+  releasedAt  DateTime?
+  
+  match       Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  @@index([status])
+}
+
+model Workflow {
+  id          String    @id @default(cuid())
+  ownerId     String
+  name        String
+  description String
+  status      String    @default("pending") // pending, running, paused, completed, failed
+  totalBudget BigInt
+  spentBudget BigInt    @default(0)
+  
+  // Steps (JSON for flexibility)
+  steps       Json
+  currentStep Int       @default(0)
+  
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  
+  owner       AgentWallet @relation(fields: [ownerId], references: [id])
+  
+  @@index([ownerId])
+  @@index([status])
+}
+
+model APIUsage {
+  id          String    @id @default(cuid())
+  endpointId  String
+  userAddress String
+  calls       Int       @default(0)
+  totalSpent  BigInt    @default(0)
+  lastCall    DateTime  @default(now())
+  
+  @@index([endpointId])
+  @@index([userAddress])
+  @@index([lastCall])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  hash        String?   // Blockchain tx hash (if applicable)
+  type        String    // payment, escrow, fee, etc.
+  from        String
+  to          String
+  amount      BigInt
+  token       String
+  status      String    // pending, success, failed
+  
+  // Metadata
+  metadata    Json?
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([from])
+  @@index([to])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Review {
+  id          String    @id @default(cuid())
+  agentId     String    // Agent being reviewed
+  reviewerId  String    // Who left the review
+  
+  rating      Int       // 1-5
+  comment     String?
+  
+  // Categories
+  quality     Int?
+  communication Int?
+  punctuality Int?
+  value       Int?
+  
+  // Verification
+  verified    Boolean   @default(false)
+  dealId      String?
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([agentId])
+  @@index([reviewerId])
+  @@index([verified])
+}
