@@ -14,6 +14,15 @@ export { ReputationSystem, ReputationProfile, TransactionRecord, Review } from '
 export { AnalyticsDashboard, PlatformMetrics, PredictiveInsight } from './analytics.js';
 export { AgentLinkSDK, SDKConfig, Task, Workflow as SDKWorkflow } from './sdk.js';
 
+// Constants & ABIs
+export {
+  NETWORKS as CONTRACT_NETWORKS,
+  ACTIVE_NETWORK,
+  AGENT_REPUTATION_ABI,
+  PAYMENT_ROUTER_ABI,
+  ERC20_ABI
+} from './constants.js';
+
 // Version
 export const VERSION = '0.1.0';
 export const PLATFORM_NAME = 'AgentLink Platform';

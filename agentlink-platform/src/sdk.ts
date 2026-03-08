@@ -6,6 +6,7 @@
  */
 
 import EventEmitter from 'events';
+import { ACTIVE_NETWORK, AGENT_REPUTATION_ABI, PAYMENT_ROUTER_ABI, ERC20_ABI } from './constants';
 
 // SDK Configuration
 export interface SDKConfig {
